@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    /* Base Options */
+    "target": "ES2020",                  /* Target modern ECMAScript features */
+    "module": "CommonJS",                 /* This is the key: Tell it we are using CommonJS (require/exports) */
+    "esModuleInterop": true,              /* Helps with 'require'ing modules */
+    "forceConsistentCasingInFileNames": true,
+    
+    /* Strictness */
+    "strict": true,
+    "skipLibCheck": true,
+
+    /* Module Resolution */
+    "moduleResolution": "node",           /* How to find modules */
+    "types": ["node"],                    /* This is the other key: Include the Node.js types we just installed */
+  },
+  "include": ["src/**/*.ts"],             /* Only compile files in our src folder */
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic CRUD Admin - Dark Mode</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Enforce dark background for the whole page */
+            background-color: #1a1a1a; 
+            color: #d1d5db; /* Default text color for dark mode */
+        }
+        /* Add subtle transition for hover effects */
+        button, input, select, div, a {
+            transition: all 0.15s ease-in-out;
+        }
+        /* Style scrollbars for a cleaner look (optional) */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #374151; /* Dark scrollbar track */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #6b7280; /* Darker scrollbar thumb */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af; 
+        }
+        /* Login/Register Button Color (Mockup Purple) */
+        .btn-purple {
+            background-color: #8b5cf6; /* Matching the mockup purple/indigo */
+        }
+        .btn-purple:hover {
+            background-color: #7c3aed; 
+        }
+        .btn-purple:focus {
+             box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-[#1a1a1a] antialiased text-gray-200">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, createContext, useContext, Fragment } = React;
+
+        // --- Configuration ---
+        const API_URL = "http://localhost:3001"; // Your backend server
+
+        // --- Authentication Context (Functionality Restored) ---
+        const AuthContext = createContext();
+
+        function AuthProvider({ children }) {
+            const [token, setToken] = useState(() => localStorage.getItem("token"));
+
+            const login = (newToken) => {
+                localStorage.setItem("token", newToken);
+                setToken(newToken);
+            };
+
+            const logout = () => {
+                localStorage.removeItem("token");
+                setToken(null);
+                window.location.hash = '#login';
+            };
+
+            const authFetch = async (url, options = {}) => {
+                const currentToken = localStorage.getItem("token");
+                const headers = {
+                    'Content-Type': 'application/json',
+                    ...options.headers,
+                };
+
+                if (currentToken) {
+                    headers['Authorization'] = `Bearer ${currentToken}`;
+                }
+
+                try {
+                    const response = await fetch(`${API_URL}${url}`, {
+                        ...options,
+                        headers,
+                    });
+
+                    if (response.status === 401 && token) {
+                        console.warn("Token expired or invalid. Logging out.");
+                        logout(); 
+                        throw new Error("Unauthorized");
+                    }
+                    if (!response.ok && response.status !== 401) {
+                        const errorBody = await response.text();
+                        try {
+                            const errorJson = JSON.parse(errorBody);
+                            throw new Error(errorJson.message || errorBody || `HTTP error! Status: ${response.status}`);
+                        } catch (parseError) {
+                            throw new Error(errorBody || `HTTP error! Status: ${response.status}`);
+                        }
+                    }
+
+                    return response;
+                } catch (error) {
+                    console.error("Fetch error:", error);
+                    throw error;
+                }
+            };
+
+
+            return (
+                <AuthContext.Provider value={{ token, login, logout, authFetch }}>
+                    {children}
+                </AuthContext.Provider>
+            );
+        }
+
+        function useAuth() {
+            return useContext(AuthContext);
+        }
+
+        // --- Main App Component (Dark Mode applied) ---
+        function App() {
+            const { token } = useAuth();
+            const [hash, setHash] = useState(() => window.location.hash || (token ? '#dashboard' : '#login'));
+
+            useEffect(() => {
+                const handleHashChange = () => {
+                    const newHash = window.location.hash || (token ? '#dashboard' : '#login');
+                    if (newHash !== hash) {
+                        setHash(newHash);
+                    }
+                };
+
+                window.addEventListener('hashchange', handleHashChange);
+
+                const currentHash = window.location.hash || '';
+                if (!token && currentHash !== '#login' && currentHash !== '#register') {
+                    console.log("Not logged in, redirecting to login");
+                    window.location.hash = '#login';
+                } else if (token && (currentHash === '#login' || currentHash === '#register' || currentHash === '')) {
+                    console.log("Logged in, redirecting to dashboard");
+                    window.location.hash = '#dashboard';
+                } else {
+                    if (currentHash !== hash) {
+                        setHash(currentHash);
+                    }
+                }
+
+                return () => window.removeEventListener('hashchange', handleHashChange);
+            }, [token, hash]); 
+
+            const navigate = (path) => {
+                if (window.location.hash !== path) {
+                    window.location.hash = path;
+                }
+            };
+
+            const renderPage = () => {
+                if (!token) {
+                    if (hash === '#register') {
+                        return <RegisterPage navigate={navigate} />;
+                    }
+                    return <LoginPage navigate={navigate} />;
+                }
+
+                switch (hash) {
+                    case '#dashboard':
+                        return <DashboardPage navigate={navigate} />;
+                    case '#create':
+                        return <ModelBuilderPage navigate={navigate} />;
+                    default:
+                        if (hash.startsWith("#model/")) {
+                            const modelName = hash.split("/")[1];
+                            if (modelName) {
+                                return <DataManagerPage modelName={decodeURIComponent(modelName)} navigate={navigate} />;
+                            }
+                        }
+                        console.warn(`Invalid route: ${hash}, falling back to dashboard.`);
+                        navigate('#dashboard'); 
+                        return <DashboardPage navigate={navigate} />; 
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-[#1a1a1a]"> 
+                    {token ? (
+                        <div className="flex flex-1">
+                            <Navbar navigate={navigate} currentHash={hash} />
+                            <main className="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-all duration-300 ml-56">
+                                {renderPage()}
+                            </main>
+                        </div>
+                    ) : (
+                        <main className="flex-grow w-full py-8">
+                            {renderPage()}
+                        </main>
+                    )}
+                    
+                    {/* Dark mode footer */}
+                    <footer className="text-center text-xs py-4 text-gray-500 border-t border-gray-800">
+                        Dynamic CRUD Platform &copy; 2025
+                    </footer>
+                </div>
+            );
+        }
+
+        // --- Navbar/Sidebar (Dark Mode, "Help" Removed) ---
+        function Navbar({ navigate, currentHash }) {
+            const { logout } = useAuth();
+            
+            const isActive = (path) => {
+                if (path.startsWith("#model")) {
+                    return currentHash.startsWith("#model/");
+                }
+                return currentHash === path;
+            };
+
+            const baseLinkClass = "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition duration-150 ease-in-out group cursor-pointer";
+            const activeClass = "bg-[#6c61f6] text-white shadow-lg"; 
+            const inactiveClass = "text-gray-400 hover:text-white hover:bg-gray-800"; 
+
+            return (
+                <nav className="fixed top-0 left-0 h-full w-56 bg-[#212121] shadow-xl z-20 border-r border-gray-700"> 
+                    <div className="flex flex-col h-full justify-between">
+                        {/* Header/Logo Section */}
+                        <div className="p-4 border-b border-gray-700">
+                            <a href="#dashboard" onClick={(e) => { e.preventDefault(); navigate('#dashboard'); }} className="flex items-center group">
+                                {/* SVG replaced with a simple icon/text for dark mode visibility */}
+                                <span className="font-bold text-xl text-gray-200 ml-2">Admin Panel</span>
+                            </a>
+                        </div>
+                        
+                        {/* Navigation Links */}
+                        <div className="flex-grow overflow-y-auto p-4 space-y-2"> 
+                            <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2 px-4">Management</h3>
+                            
+                            <button
+                                onClick={() => navigate("#dashboard")}
+                                className={`${baseLinkClass} ${isActive('#dashboard') ? activeClass : inactiveClass}`}
+                            >
+                                <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                                Model List
+                            </button>
+                            
+                            <button
+                                onClick={() => navigate("#create")}
+                                className={`${baseLinkClass} ${isActive('#create') ? activeClass : inactiveClass}`}
+                            >
+                                <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                Model Definition
+                            </button>
+
+                            {currentHash.startsWith("#model/") && (
+                                <button
+                                    onClick={() => navigate(currentHash)}
+                                    className={`${baseLinkClass} ${isActive('#model') ? activeClass : inactiveClass}`}
+                                >
+                                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m-9 11h18c.552 0 1-.448 1-1V5c0-.552-.448-1-1-1H3c-.552 0-1 .448-1 1v14c0 .552.448 1 1 1z"></path></svg>
+                                    Records List
+                                </button>
+                            )}
+                        </div>
+                        
+                        {/* Footer/Logout Section (Help removed, Logout styled for dark theme) */}
+                        <div className="p-4 border-t border-gray-700 space-y-2">
+                            <button
+                                onClick={logout}
+                                className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-150 ease-in-out"
+                            >
+                                <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                                Log out
+                            </button>
+                        </div>
+                    </div>
+                </nav>
+            );
+        }
+
+        // --- LoginPage (Dark Mode applied) ---
+        function LoginPage({ navigate }) {
+            const [email, setEmail] = useState("");
+            const [password, setPassword] = useState("");
+            const [error, setError] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const { login } = useAuth();
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError(null);
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_URL}/api/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password }),
+                    });
+
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(errText || 'Login failed');
+                    }
+
+                    const data = await response.json();
+                    login(data.token);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="flex-grow flex items-center justify-center">
+                    {/* Dark mode card for Login */}
+                    <div className="max-w-md w-full bg-[#212121] shadow-2xl rounded-xl p-10 space-y-6 border border-gray-700">
+                        <h2 className="text-4xl font-semibold text-center text-gray-100 mb-2">Login!</h2>
+                        <p className="text-center text-gray-400 mb-8">Access your administrator panel.</p>
+                        {error && <ErrorDisplay message={error} />}
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="appearance-none block w-full px-4 py-3 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-base" 
+                                    required
+                                    placeholder="Enter your email"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="appearance-none block w-full px-4 py-3 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-base" 
+                                    required
+                                    placeholder="Enter your password"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-base font-medium text-white ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'btn-purple hover:bg-[#7c3aed] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}`}
+                            >
+                                {loading ? 'Signing in...' : 'Sign In'}
+                            </button>
+                            <div className="text-center text-sm pt-2 space-y-2">
+                                <button type="button" onClick={() => {}} className="font-medium text-gray-400 hover:text-indigo-400">
+                                    Forgot Password?
+                                </button>
+                                <p className="text-gray-400">
+                                    Don't have an account? 
+                                    <button type="button" onClick={() => navigate("#register")} className="font-medium text-indigo-400 hover:text-indigo-300 ml-1">
+                                        Register Here
+                                    </button>
+                                </p>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- RegisterPage (Dark Mode applied) ---
+        function RegisterPage({ navigate }) {
+            const [email, setEmail] = useState("");
+            const [password, setPassword] = useState("");
+            const [confirmPassword, setConfirmPassword] = useState("");
+            const [error, setError] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError(null);
+                
+                if (password !== confirmPassword) {
+                    setError("Passwords do not match.");
+                    return;
+                }
+                
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_URL}/api/auth/register`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password, role: "Admin" }), 
+                    });
+
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(errText || 'Registration failed');
+                    }
+
+                    alert("Registration successful! Please log in.");
+                    navigate("#login");
+
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="flex-grow flex items-center justify-center">
+                    {/* Dark mode card for Register */}
+                    <div className="max-w-md w-full bg-[#212121] shadow-2xl rounded-xl p-10 space-y-6 border border-gray-700">
+                        <h2 className="text-3xl font-semibold text-center text-gray-100 mb-2">Register</h2>
+                        <p className="text-center text-gray-400 mb-8">Create your admin account to get started.</p>
+                        {error && <ErrorDisplay message={error} />}
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="appearance-none block w-full px-4 py-3 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-base" 
+                                    required
+                                    placeholder="admin@example.com"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="appearance-none block w-full px-4 py-3 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-base" 
+                                    required
+                                    placeholder="Enter your password"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Confirm Password</label>
+                                <input
+                                    type="password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    className="appearance-none block w-full px-4 py-3 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-base" 
+                                    required
+                                    placeholder="Confirm your password"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-base font-medium text-white ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'btn-purple hover:bg-[#7c3aed] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}`}
+                            >
+                                {loading ? 'Registering...' : 'Register'}
+                            </button>
+                            <div className="text-center text-sm pt-2">
+                                <p className="text-gray-400">
+                                    Already have an account? 
+                                    <button type="button" onClick={() => navigate("#login")} className="font-medium text-indigo-400 hover:text-indigo-300 ml-1">
+                                        Log In
+                                    </button>
+                                </p>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Loading Spinner (Dark Mode) ---
+        function LoadingSpinner() {
+            return (
+                <div className="flex justify-center items-center h-64 text-gray-400">
+                    <svg className="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span className="text-lg font-medium">Loading...</span>
+                </div>
+            );
+        }
+
+        // --- Error Display (Dark Mode) ---
+        function ErrorDisplay({ message }) {
+            return (
+                <div className="bg-red-900/30 border border-red-700 text-red-400 px-4 py-3 rounded-lg relative shadow-sm" role="alert">
+                    <strong className="font-bold block mb-1">Error:</strong>
+                    <span className="block sm:inline">{message}</span>
+                </div>
+            );
+        }
+
+
+        // --- DashboardPage (Model List - FUNCTIONALITY RESTORED & MODIFIED) ---
+        function DashboardPage({ navigate }) {
+            // RESTORED: Empty array to load data from API
+            const [models, setModels] = useState([]);
+            // RESTORED: Loading state set to true to trigger fetch
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const { authFetch } = useAuth();
+
+            useEffect(() => {
+                let isMounted = true;
+                setLoading(true);
+                setError(null);
+
+                authFetch('/api/models')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (isMounted) {
+                            setModels(data);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Dashboard fetch error:", err);
+                        if (isMounted && err.message !== "Unauthorized") {
+                            setError(err.message || "Failed to load models.");
+                        }
+                    })
+                    .finally(() => {
+                        if (isMounted) {
+                            setLoading(false);
+                        }
+                    });
+
+                return () => { isMounted = false; };
+            }, [authFetch]);
+
+            // --- ADDED: Delete Model Functionality ---
+            const handleDeleteModel = async (modelName) => {
+                if (!window.confirm(`Are you sure you want to delete the model "${modelName}"? This action is permanent and will delete all associated data.`)) {
+                    return;
+                }
+                
+                setError(null); // Clear previous errors
+
+                try {
+                    // Assumes the backend API is: DELETE /api/models/:modelName
+                    await authFetch(`/api/models/${encodeURIComponent(modelName)}`, {
+                        method: 'DELETE',
+                    });
+
+                    // If successful, remove the model from the local state to update the UI
+                    setModels(prevModels => prevModels.filter(m => m.name !== modelName));
+
+                } catch (err) {
+                    console.error("Delete model error:", err);
+                    setError(err.message || "Failed to delete model.");
+                }
+            };
+            // --- END OF ADDED FUNCTION ---
+
+
+            if (loading) return <LoadingSpinner />;
+            
+
+            return (
+                <div className="max-w-7xl mx-auto">
+                    <div className="flex justify-between items-center mb-8">
+                        <h1 className="text-3xl font-bold text-gray-100">Data Models</h1>
+                        <button 
+                            onClick={() => navigate('#create')}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow-md inline-flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            Add New Model
+                        </button>
+                    </div>
+
+                    {/* Show error above table if it exists */}
+                    {error && <div className="mb-4"><ErrorDisplay message={error} /></div>}
+                    
+                    {/* Dark Mode Table Container */}
+                    <div className="shadow-xl rounded-xl overflow-x-auto bg-[#212121] border border-gray-700">
+                        <table className="min-w-full divide-y divide-gray-700">
+                            <thead className="bg-[#1f2937]">
+                                <tr>
+                                    {/* --- MODIFIED: Columns Removed --- */}
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Name</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:table-cell">Description</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider hidden md:table-cell">Owner</th>
+                                    {/* <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider hidden lg:table-cell">Last Updated</th> (REMOVED) */}
+                                    {/* <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th> (REMOVED) */}
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
+                                    {/* --- END OF MODIFICATION --- */}
+                                </tr>
+                            </thead>
+                            <tbody className="bg-[#212121] divide-y divide-gray-700">
+                                {models.length === 0 ? (
+                                    <tr>
+                                        {/* --- MODIFIED: Colspan updated from 6 to 4 --- */}
+                                        <td colSpan="4" className="px-6 py-8 text-center text-sm text-gray-400">
+                                            No models created yet.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    models.map((model) => {
+                                        // --- MODIFIED: Removed status and lastUpdated logic ---
+                                        const mockOwner = model.owner || 'Admin'; 
+
+                                        return (
+                                            <tr key={model.name} className="hover:bg-gray-800">
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-400">{model.name}</td>
+                                                <td className="px-6 py-4 text-sm text-gray-300 max-w-xs truncate hidden sm:table-cell">
+                                                    {model.description || `Fields: ${model.fields ? model.fields.map(f => f.name).join(', ') : 'None'}`}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 hidden md:table-cell">{mockOwner}</td>
+                                                
+                                                {/* --- MODIFIED: Removed two <td> cells --- */}
+                                                {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 hidden lg:table-cell">{lastUpdated}</td> (REMOVED) */}
+                                                {/* <td className="px-6 py-4 whitespace-nowrap"> ... </span> </td> (REMOVED) */}
+
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                                    <button onClick={() => navigate("#create")} className="text-gray-400 hover:text-indigo-400 font-medium">
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => navigate(`#model/${encodeURIComponent(model.name)}`)}
+                                                        className="text-indigo-400 hover:text-indigo-300 font-medium whitespace-nowrap"
+                                                    >
+                                                        Manage Records
+                                                    </button>
+                                                    {/* --- MODIFIED: Added onClick handler --- */}
+                                                    <button 
+                                                        onClick={() => handleDeleteModel(model.name)}
+                                                        className="text-red-400 hover:text-red-300 font-medium"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- ModelBuilderPage (Dark Mode applied) ---
+        function ModelBuilderPage({ navigate }) {
+            // RESTORED: Empty initial state to allow creating new model
+            const [modelName, setModelName] = useState("");
+            const [description, setDescription] = useState(""); 
+            const [fields, setFields] = useState([{ name: "", type: "string", required: false, unique: false }]); 
+            const [ownerField, setOwnerField] = useState("");
+            const [rbac, setRbac] = useState({
+                Admin: ["all"],
+                Manager: ["create", "read", "update"], 
+                Viewer: ["read"]
+            });
+            const { authFetch } = useAuth();
+            const [error, setError] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            const handleFieldChange = (index, e) => {
+                const { name, value, type, checked } = e.target;
+                const newFields = [...fields];
+                newFields[index][name] = type === 'checkbox' ? checked : value;
+                setFields(newFields);
+            };
+
+            const addField = () => {
+                setFields([...fields, { name: "", type: "string", required: false, unique: false }]);
+            };
+
+            const removeField = (index) => {
+                if (fields.length <= 1) return;
+                const newFields = fields.filter((_, i) => i !== index);
+                setFields(newFields);
+            };
+
+            const handleRbacChange = (role, permission) => {
+                const newRbac = { ...rbac };
+                const permissions = newRbac[role] || [];
+
+                if (permission === 'all') {
+                    if (permissions.includes('all')) {
+                        newRbac[role] = [];
+                    } else {
+                        newRbac[role] = ['all'];
+                    }
+                } else {
+                    if (permissions.includes('all')) {
+                        newRbac[role] = [];
+                    }
+                    if (newRbac[role].includes(permission)) {
+                        newRbac[role] = newRbac[role].filter(p => p !== permission);
+                    } else {
+                        newRbac[role] = [...newRbac[role], permission];
+                    }
+                }
+                setRbac(newRbac);
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError(null);
+                setLoading(true);
+
+                const trimmedModelName = modelName.trim();
+                if (!trimmedModelName) {
+                    setError("Model name cannot be empty."); setLoading(false); return;
+                }
+                if (!/^[a-zA-Z0-9_]+$/.test(trimmedModelName)) {
+                    setError("Model name should only contain letters, numbers, and underscores (no spaces)."); setLoading(false); return;
+                }
+                if (fields.some(f => !f.name.trim())) {
+                    setError("Field names cannot be empty."); setLoading(false); return;
+                }
+                const fieldNames = fields.map(f => f.name.trim().toLowerCase()); 
+                if (new Set(fieldNames).size !== fieldNames.length) {
+                    setError("Field names must be unique (case-insensitive)."); setLoading(false); return;
+                }
+                if (['id', 'created_at', 'updated_at'].includes(trimmedModelName.toLowerCase())) {
+                    setError(`Model name "${trimmedModelName}" is reserved.`); setLoading(false); return;
+                }
+                if (fields.some(f => ['id', 'created_at', 'updated_at'].includes(f.name.trim().toLowerCase()))) {
+                    setError("Field names 'id', 'created_at', 'updated_at' are reserved."); setLoading(false); return;
+                }
+
+
+                const modelDefinition = {
+                    name: trimmedModelName,
+                    description: description.trim(), 
+                    fields: fields.map(f => ({ ...f, name: f.name.trim() })),
+                    rbac,
+                    ownerField: ownerField.trim() || undefined
+                };
+
+                try {
+                    await authFetch('/api/models/publish', {
+                        method: 'POST',
+                        body: JSON.stringify(modelDefinition)
+                    });
+                    alert('Model published successfully! Redirecting to Dashboard...');
+                    navigate('#dashboard');
+                } catch (err) {
+                    setError(err.message || 'Failed to publish model');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex justify-between items-center mb-8">
+                        <h1 className="text-3xl font-bold text-gray-100">Model Definition</h1>
+                    </div>
+                    
+                    <form onSubmit={handleSubmit} className="space-y-8">
+                        {error && <ErrorDisplay message={error} />}
+
+                        {/* --- Model Details Section (Dark Mode Card) --- */}
+                        <div className="bg-[#212121] shadow-lg rounded-xl p-8 border border-gray-700">
+                            <h2 className="text-xl font-semibold text-gray-100 border-b border-gray-700 pb-3 mb-6">Model Details</h2>
+                            <p className="text-sm text-gray-400 mb-6">Define the core attributes of your data model.</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Model Name <span className="text-red-400">*</span></label>
+                                    <input
+                                        type="text"
+                                        value={modelName}
+                                        onChange={(e) => setModelName(e.target.value)}
+                                        className="appearance-none block w-full px-4 py-2 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
+                                        placeholder="Product"
+                                        required
+                                    />
+                                    <p className="mt-1 text-xs text-gray-500">Alphanumeric & underscores only (e.g., `ProductCatalog`).</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Owner Field (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={ownerField}
+                                        onChange={(e) => setOwnerField(e.target.value)}
+                                        className="appearance-none block w-full px-4 py-2 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
+                                        placeholder="e.g., userId"
+                                    />
+                                    <p className="mt-1 text-xs text-gray-500">Links record to a user ID for ownership rules.</p>
+                                </div>
+                             </div>
+                            <div className="mt-6">
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                                <textarea
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    rows="3"
+                                    className="appearance-none block w-full px-4 py-2 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                    placeholder="A comprehensive model for managing product information..."
+                                />
+                            </div>
+                        </div>
+
+                        {/* --- Fields Section (Dark Mode Card) --- */}
+                        <div className="bg-[#212121] shadow-lg rounded-xl p-8 border border-gray-700">
+                            <h2 className="text-xl font-semibold text-gray-100 border-b border-gray-700 pb-3 mb-6">Field Definitions</h2>
+                            <p className="text-sm text-gray-400 mb-6">Configure each field with its type, constraints, and relationships.</p>
+
+                            <div className="space-y-5">
+                                <div className="hidden sm:grid grid-cols-12 gap-4 text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 pb-2 border-b border-gray-700">
+                                    <span className="col-span-4">Field Name <span className="text-red-400">*</span></span>
+                                    <span className="col-span-3">Field Type</span>
+                                    <span className="col-span-2 text-center">Required</span>
+                                    <span className="col-span-2 text-center">Unique</span>
+                                    <span className="col-span-1"></span> 
+                                </div>
+                                {fields.map((field, index) => (
+                                    <div key={index} className="grid grid-cols-12 gap-4 items-center p-3 border border-gray-700 rounded-lg bg-gray-800 relative"> 
+                                        <div className="col-span-12 sm:col-span-4">
+                                            <label className="block text-xs font-medium text-gray-400 sm:hidden mb-1">Field Name <span className="text-red-400">*</span></label>
+                                            <input
+                                                type="text"
+                                                name="name"
+                                                value={field.name}
+                                                onChange={(e) => handleFieldChange(index, e)}
+                                                className="appearance-none block w-full px-3 py-2 border border-gray-600 rounded-lg shadow-sm sm:text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-[#212121] text-gray-100" 
+                                                placeholder="e.g., productName"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="col-span-12 sm:col-span-3">
+                                            <label className="block text-xs font-medium text-gray-400 sm:hidden mb-1">Type</label>
+                                            <select
+                                                name="type"
+                                                value={field.type}
+                                                onChange={(e) => handleFieldChange(index, e)}
+                                                className="block w-full px-3 py-2 border border-gray-600 rounded-lg shadow-sm bg-[#212121] text-gray-100 sm:text-sm focus:ring-indigo-500 focus:border-indigo-500 h-[42px]"
+                                            >
+                                                <option value="string">String</option>
+                                                <option value="number">Number</option>
+                                                <option value="boolean">Boolean</option>
+                                                <option value="float">Float</option>
+                                                <option value="relation">Relation</option>
+                                            </select>
+                                        </div>
+                                        <div className="col-span-6 sm:col-span-2 flex justify-center items-center h-[42px]">
+                                            <input
+                                                id={`required-${index}`}
+                                                type="checkbox"
+                                                name="required"
+                                                checked={field.required}
+                                                onChange={(e) => handleFieldChange(index, e)}
+                                                className="h-4 w-4 rounded border-gray-600 bg-[#212121] text-indigo-500 focus:ring-indigo-500"
+                                            />
+                                            <label htmlFor={`required-${index}`} className="ml-2 block text-sm text-gray-300 sm:hidden">Required</label>
+                                        </div>
+                                        <div className="col-span-6 sm:col-span-2 flex justify-center items-center h-[42px]">
+                                            <input
+                                                id={`unique-${index}`}
+                                                type="checkbox"
+                                                name="unique"
+                                                checked={field.unique}
+                                                onChange={(e) => handleFieldChange(index, e)}
+                                                className="h-4 w-4 rounded border-gray-600 bg-[#212121] text-indigo-500 focus:ring-indigo-500"
+                                            />
+                                            <label htmlFor={`unique-${index}`} className="ml-2 block text-sm text-gray-300 sm:hidden">Unique</label>
+                                        </div>
+                                        
+                                        <div className="col-span-12 sm:col-span-1 flex justify-center items-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => removeField(index)}
+                                                disabled={fields.length <= 1}
+                                                className={`bg-red-900/50 hover:bg-red-800 text-red-400 font-medium py-1 px-2 rounded-md text-xs shadow-sm ${fields.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                title="Remove Field"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={addField}
+                                    className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium py-2 px-4 rounded-lg text-sm shadow-sm inline-flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                >
+                                    <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                    Add New Field
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* --- RBAC Section (Dark Mode Card) --- */}
+                        <div className="bg-[#212121] shadow-lg rounded-xl p-8 border border-gray-700">
+                            <h2 className="text-xl font-semibold text-gray-100 border-b border-gray-700 pb-3 mb-6">RBAC Permissions</h2>
+                            <p className="text-sm text-gray-400 mb-6">Define access levels for different user roles.</p>
+                            
+                            <div className="hidden sm:grid grid-cols-6 gap-4 text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 pb-2 border-b border-gray-700">
+                                <span className="col-span-2">Role</span>
+                                <span className="col-span-1 text-center">Create</span>
+                                <span className="col-span-1 text-center">Read</span>
+                                <span className="col-span-1 text-center">Update</span>
+                                <span className="col-span-1 text-center">Delete</span>
+                            </div>
+
+                            <div className="space-y-4 pt-2">
+                                {['Admin', 'Manager', 'Viewer'].map((role) => ( 
+                                    <div key={role} className="grid grid-cols-6 gap-4 items-center p-3 border border-gray-700 rounded-lg bg-gray-800">
+                                        <h3 className="col-span-6 sm:col-span-2 font-semibold text-gray-200">{role}</h3>
+                                        
+                                        {['create', 'read', 'update', 'delete'].map((perm) => (
+                                            <div key={`${role}-${perm}`} className="col-span-3 sm:col-span-1 flex items-center justify-center">
+                                                <label className="flex items-center space-x-2 text-sm cursor-pointer group sm:justify-center">
+                                                    <span className="text-gray-400 sm:hidden capitalize">{perm}</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={rbac[role]?.includes(perm) || rbac[role]?.includes('all')} 
+                                                        onChange={() => handleRbacChange(role, perm)}
+                                                        className={`h-4 w-4 rounded border-gray-600 bg-[#212121] text-indigo-500 focus:ring-indigo-500`}
+                                                        disabled={rbac[role]?.includes('all') && perm !== 'all'}
+                                                    />
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* --- Submit/Cancel Buttons (Dark Mode) --- */}
+                        <div className="flex justify-end gap-4 pt-4">
+                            <button
+                                type="button"
+                                onClick={() => navigate("#dashboard")}
+                                className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium py-2 px-5 rounded-lg text-sm shadow-sm border border-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            >
+                                Cancel
+                            </button>
+                            {/* Dark Mode: Delete button disabled as before, but styled for dark mode */}
+                            <button
+                                type="button"
+                                disabled
+                                className="bg-gray-700/50 text-red-400 font-medium py-2 px-5 rounded-lg text-sm shadow-sm border border-gray-600 opacity-50 cursor-not-allowed"
+                            >
+                                Delete
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className={`inline-flex items-center justify-center py-2 px-6 border border-transparent rounded-lg shadow-md text-sm font-medium text-white ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}`}
+                            >
+                                {loading ? (
+                                    <Fragment>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Publishing...
+                                    </Fragment>
+                                ) : 'Publish Model'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+        }
+
+        // --- DataManagerPage (Records List - FUNCTIONALITY RESTORED) ---
+        function DataManagerPage({ modelName, navigate }) {
+            const [model, setModel] = useState(null);
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [formError, setFormError] = useState(null);
+            const { authFetch } = useAuth();
+            const [formData, setFormData] = useState({});
+            const [editingItem, setEditingItem] = useState(null);
+            const [isModalOpen, setIsModalOpen] = useState(false); 
+
+            const resetForm = (schemaFields) => {
+                const initial = schemaFields.reduce((acc, field) => {
+                    acc[field.name] = field.type === 'boolean' ? false : '';
+                    return acc;
+                }, {});
+                setFormData(initial);
+                setEditingItem(null);
+                setFormError(null);
+            };
+
+            const fetchData = async () => {
+                setError(null);
+                try {
+                    let currentModel = model;
+                    if (!currentModel) {
+                        const modelsResponse = await authFetch('/api/models');
+                        const models = await modelsResponse.json();
+                        currentModel = models.find(m => m.name === modelName);
+                        if (!currentModel) throw new Error(`Model "${modelName}" not found.`);
+                        setModel(currentModel);
+                        resetForm(currentModel.fields);
+                    }
+
+                    const dataResponse = await authFetch(`/api/${modelName.toLowerCase()}`);
+                    const fetchedData = await dataResponse.json();
+                    setData(fetchedData);
+
+                } catch (err) {
+                    console.error("Data Manager fetch error:", err);
+                    if (err.message !== "Unauthorized") {
+                        setError(err.message || "Failed to load data.");
+                    }
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+            }, [modelName, authFetch]);
+
+            const handleFormChange = (e) => {
+                const { name, value, type, checked } = e.target;
+                setFormData(prev => ({
+                    ...prev,
+                    [name]: type === 'checkbox' ? checked : value
+                }));
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setFormError(null);
+                
+                try {
+                    for (const field of model.fields) {
+                        if (field.required && !formData[field.name] && typeof formData[field.name] !== 'boolean') {
+                            throw new Error(`Field "${field.name}" is required.`);
+                        }
+                    }
+                    
+                    if (editingItem) {
+                        await authFetch(`/api/${modelName.toLowerCase()}/${editingItem.id}`, { method: 'PUT', body: JSON.stringify(formData) });
+                    } else {
+                        await authFetch(`/api/${modelName.toLowerCase()}`, { method: 'POST', body: JSON.stringify(formData) });
+                    }
+                    
+                    resetForm(model.fields);
+                    setIsModalOpen(false); 
+                    fetchData(); 
+                } catch (err) {
+                    setFormError(err.message || `Failed to ${editingItem ? 'update' : 'create'} item`);
+                }
+            };
+
+            const handleDelete = async (itemId) => {
+                if (!window.confirm("Are you sure you want to delete this record?")) return;
+                setFormError(null);
+                try {
+                    await authFetch(`/api/${modelName.toLowerCase()}/${itemId}`, { method: 'DELETE' });
+                    fetchData(); 
+                } catch (err) {
+                    setFormError(err.message || 'Failed to delete item');
+                }
+            };
+
+            const handleOpenModalForCreate = () => {
+                resetForm(model.fields);
+                setIsModalOpen(true);
+            };
+
+            const handleOpenModalForEdit = (item) => {
+                const itemData = JSON.parse(JSON.stringify(item));
+                model.fields.forEach(f => { if (f.type === 'boolean' && !(f.name in itemData)) { itemData[f.name] = false; } });
+                setEditingItem(item);
+                setFormData(itemData);
+                setFormError(null);
+                setIsModalOpen(true);
+            };
+            
+            const handleCloseModal = () => {
+                resetForm(model.fields);
+                setIsModalOpen(false);
+            };
+
+
+            if (loading) return <LoadingSpinner />;
+            if (error) return <ErrorDisplay message={error} />;
+            if (!model) return <ErrorDisplay message={`Model schema for "${modelName}" could not be loaded.`} />;
+
+
+            // --- Dynamic Form Renderer (Modal Content - Dark Mode) ---
+            const renderForm = () => {
+                return (
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        {formError && <ErrorDisplay message={formError} />}
+                        <div className="space-y-5">
+                            {model.fields.map(field => (
+                                <div key={field.name}>
+                                    <label className="block text-sm font-medium text-gray-300 capitalize mb-1">
+                                        {field.name} {field.required && <span className="text-red-400">*</span>}
+                                    </label>
+                                    {field.type === 'boolean' ? (
+                                        <div className="flex items-center h-10 mt-1">
+                                            <input
+                                                id={`field-${field.name}`}
+                                                type="checkbox"
+                                                name={field.name}
+                                                checked={!!formData[field.name]}
+                                                onChange={handleFormChange}
+                                                className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500"
+                                            />
+                                            <label htmlFor={`field-${field.name}`} className="ml-2 block text-sm text-gray-100 cursor-pointer">
+                                                Active
+                                            </label>
+                                        </div>
+                                    ) : (
+                                        <input
+                                            type={field.type === 'number' || field.type === 'float' || field.type === 'integer' ? 'number' : 'text'}
+                                            name={field.name}
+                                            value={formData[field.name] ?? ''}
+                                            onChange={handleFormChange}
+                                            className="appearance-none block w-full px-4 py-2 border border-gray-600 rounded-lg shadow-sm placeholder-gray-500 bg-gray-800 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                            required={field.required}
+                                            placeholder={`Enter ${field.name.toLowerCase()}`}
+                                        />
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <div className="flex justify-end gap-3 pt-4">
+                            <button
+                                type="button"
+                                onClick={handleCloseModal}
+                                className="bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium py-2 px-5 rounded-lg text-sm shadow-sm border border-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg text-sm shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            >
+                                {editingItem ? 'Update Record' : 'Add Record'}
+                            </button>
+                        </div>
+                    </form>
+                );
+            };
+
+            // --- Dynamic Table Renderer (Dark Mode) ---
+            const renderTable = () => {
+                return (
+                    <div className="shadow-xl rounded-xl overflow-x-auto bg-[#212121] border border-gray-700">
+                        <table className="min-w-full divide-y divide-gray-700">
+                            <thead className="bg-[#1f2937]">
+                                <tr>
+                                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">ID</th>
+                                    {model.fields.map((field) => (
+                                        <th key={field.name} scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider capitalize">
+                                            {field.name}
+                                        </th>
+                                    ))}
+                                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-[#212121] divide-y divide-gray-700">
+                                {data.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={model.fields.length + 2} className="px-6 py-8 text-center text-sm text-gray-400">
+                                            No data entries found. Use the "Add New Record" button.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    data.map((item) => (
+                                        <tr key={item.id} className="hover:bg-gray-800/70">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-300">{item.id}</td>
+                                            {model.fields.map((field) => (
+                                                <td key={field.name} className="px-6 py-4 whitespace-nowGrap text-sm text-gray-300">
+                                                    {field.type === 'boolean' ? (
+                                                        item[field.name] ?
+                                                        <span className="text-green-400 font-semibold">True</span>
+                                                        : <span className="text-red-400 font-semibold">False</span>
+                                                    ) : (
+                                                        String(item[field.name] ?? '')
+                                                    )}
+                                                </td>
+                                            ))}
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
+                                                <button
+                                                    onClick={() => handleOpenModalForEdit(item)}
+                                                    className="text-indigo-400 hover:text-indigo-200 font-semibold"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(item.id)}
+                                                    className="text-red-400 hover:text-red-200 font-semibold"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="max-w-7xl mx-auto space-y-8">
+                    <div className="flex justify-between items-center">
+                        <h1 className="text-3xl font-bold text-gray-100">Managing Records: <span className="text-indigo-400">{model.name}</span></h1>
+                        <button 
+                            onClick={handleOpenModalForCreate}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow-md inline-flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            Add New Record
+                        </button>
+                    </div>
+
+                    <div className="p-4 bg-[#212121] rounded-xl shadow-lg border border-gray-700">
+                        <h2 className="text-xl font-semibold text-gray-200 mb-4">Existing {model.name} Data</h2>
+                        {renderTable()}
+                    </div>
+                    
+                    {/* Modal Component (Dark Mode) */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+                            <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0 bg-gray-900 bg-opacity-75">
+
+                                <div className="inline-block align-bottom bg-[#212121] rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                                    <div className="bg-[#212121] px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                        <div className="sm:flex sm:items-start">
+                                            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                                <h3 className="text-lg leading-6 font-medium text-gray-100 border-b border-gray-700 pb-3 mb-4" id="modal-title">
+                                                    {editingItem ? `Edit ${model.name} Record (ID: ${editingItem.id})` : `Add New ${model.name} Record`}
+                                                </h3>
+                                                <div className="mt-2">
+                                                    {renderForm()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- Mount the App ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <React.StrictMode>
+                <AuthProvider>
+                    <App />
+                </AuthProvider>
+            </React.StrictMode>
+        );
+
+    </script>
+</body>
+</html>

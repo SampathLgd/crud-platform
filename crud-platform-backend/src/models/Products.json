@@ -1,0 +1,31 @@
+{
+  "name": "Products",
+  "description": "",
+  "fields": [
+    {
+      "name": "Name",
+      "type": "string",
+      "required": true,
+      "unique": false
+    },
+    {
+      "name": "Price",
+      "type": "number",
+      "required": true,
+      "unique": false
+    }
+  ],
+  "rbac": {
+    "Admin": [
+      "all"
+    ],
+    "Manager": [
+      "create",
+      "read",
+      "update"
+    ],
+    "Viewer": [
+      "read"
+    ]
+  }
+}
