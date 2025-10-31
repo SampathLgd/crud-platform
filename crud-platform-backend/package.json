@@ -5,7 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "knex": "knex",
-    "start": "nodemon --watch src/**/*.ts --exec ts-node src/index.ts"
+    "start": "nodemon --watch \"src/**/*.ts\" --exec ts-node src/index.ts"
   },
   "keywords": [],
   "author": "",
@@ -14,9 +14,11 @@
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
+    "nodemailer": "^7.0.10",
     "pg": "^8.16.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
@@ -27,6 +29,7 @@
     "@types/express": "^5.0.5",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.9.2",
+    "@types/nodemailer": "^7.0.3",
     "nodemon": "^3.1.10"
   }
 }

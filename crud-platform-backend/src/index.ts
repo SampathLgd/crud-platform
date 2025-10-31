@@ -2,6 +2,10 @@ import express = require('express');
 // (Add these at the top of index.ts, with your other imports)
 import fs = require('fs/promises');
 import path = require('path');
+import dotenv = require('dotenv');
+dotenv.config();
+
+// ...rest of your imports
 
 const cors = require('cors');
 const database = require('./database'); // <-- IMPORT from new file
