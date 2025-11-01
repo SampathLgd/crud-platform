@@ -9,8 +9,9 @@ import type { Knex } from 'knex';
 // (Interface definitions are fine)
 interface Field {
   name: string;
-  type: 'string' | 'number' | 'boolean';
+  type: 'string' | 'number' | 'boolean' | 'relation';
   required?: boolean;
+  relation?: string; // <-- ADD: For relation fields
 }
 
 interface RBACRules {
@@ -90,6 +91,12 @@ class SchemaService {
             break;
           case 'boolean':
             column = table.boolean(field.name).defaultTo(false);
+            break;
+          case 'relation':
+            column = table.integer(field.name).unsigned();
+            if (field.relation) {
+                column.references('id').inTable(field.relation.toLowerCase()).onDelete('SET NULL');
+            }
             break;
         }
         if (field.required) {

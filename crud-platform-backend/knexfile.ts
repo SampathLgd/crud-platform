@@ -14,6 +14,17 @@ const config: { [key: string]: Knex.Config } = {
       tableName: "knex_migrations"
     }
   },
+  test: {
+    client: "pg",
+    connection: {
+      database: 'crud_platform_test', // A separate database for testing
+      user:     'postgres',           // Your DB user
+      password: 'zxcv#139'           // Your DB password
+    },
+    migrations: {
+      tableName: "knex_migrations"
+    }
+  },
 
   staging: {
     client: "postgresql",

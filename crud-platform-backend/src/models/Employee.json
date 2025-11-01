@@ -1,18 +1,19 @@
 {
-  "name": "Products",
+  "name": "Employee",
   "description": "",
   "fields": [
     {
-      "name": "Name",
+      "name": "emp_Name",
       "type": "string",
       "required": true,
-      "unique": false
+      "unique": false,
+      "default": "N/A"
     },
     {
-      "name": "Price",
-      "type": "number",
+      "name": "emp_ID",
+      "type": "string",
       "required": true,
-      "unique": false
+      "unique": true
     }
   ],
   "rbac": {

@@ -12,7 +12,7 @@
 
     /* Module Resolution */
     "moduleResolution": "node",           /* How to find modules */
-    "types": ["node"],                    /* This is the other key: Include the Node.js types we just installed */
+    "types": ["node" , "jest"],                    /* This is the other key: Include the Node.js types we just installed */
   },
   "include": ["src/**/*.ts"],             /* Only compile files in our src folder */
   "exclude": ["node_modules"]
