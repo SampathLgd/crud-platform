@@ -1,13 +1,14 @@
+
 # Auto-Generated CRUD + RBAC Platform
 
-[cite_start]This project is a full-stack internal developer platform built for the SDE Assignment[cite: 1, 4]. [cite_start]It allows an Admin user to define data models through a web interface[cite: 4, 12]. The backend then automatically:
-1.  [cite_start]Saves the model definition to a `.json` file[cite: 9, 14].
+This project is a full-stack internal developer platform built for the SDE Assignment. It allows an Admin user to define data models through a web interface. The backend then automatically:
+1.  Saves the model definition to a `.json` file.
 2.  Creates a new table in the database for that model.
-3.  [cite_start]Generates a full set of RBAC-protected CRUD REST APIs for that model, available instantly[cite: 6, 8, 15].
+3.  Generates a full set of RBAC-protected CRUD REST APIs for that model, available instantly.
 
 ### Tech Stack
-* [cite_start]**Backend:** Node.js, Express, TypeScript, Knex.js, PostgreSQL [cite: 72, 74]
-* [cite_start]**Frontend:** React (run via Babel in-browser), TailwindCSS [cite: 73]
+* **Backend:** Node.js, Express, TypeScript, Knex.js, PostgreSQL
+* **Frontend:** React (run via Babel in-browser), TailwindCSS
 * **Auth:** JSON Web Tokens (JWT)
 
 ---
@@ -30,8 +31,8 @@ The backend server manages the database, file-writing, and dynamic API generatio
 
 3.  **Set up PostgreSQL:**
     * Ensure you have PostgreSQL running.
-    * Create a new database. The default is `crud_platform` (defined in `knexfile.ts`).
-    * Update the `knexfile.ts` with your database `user` and `password`.
+    * Create two databases: `crud_platform` (for development) and `crud_platform_test` (for testing).
+    * Update the `knexfile.ts` with your database `user` and `password` for both the `development` and `test` environments.
 
 4.  **Create `.env` file:**
     Create a file named `.env` in the `crud-platform-backend` root folder. This is **required** for the app to run.
@@ -77,69 +78,103 @@ You can now access the admin panel in your browser.
 
 ---
 
-## [cite_start]How to Create & Publish a Model [cite: 89]
+## Dynamic API & RBAC Testing
+
+The project includes an automated test suite (`api.test.ts`) that proves the dynamic API generation and RBAC enforcement works correctly.
+
+To run the tests, use the following command from the `crud-platform-backend` folder:
+```bash
+npm test
+````
+
+### The Test Flow
+
+The test file (`src/tests/api.test.ts`) executes the following flow to validate the system's core features:
+
+1.  **Full Database Reset:** The `beforeAll` hook completely drops and recreates the `public` schema in the **test database** (`crud_platform_test`) and re-runs all migrations. This ensures a perfectly clean slate for every test run.
+2.  **Auth Setup:** It registers an "Admin" user and a "Viewer" user and logs them in to get their authentication tokens.
+3.  **RBAC Test (Failure Case):** It tests that the "Viewer" user **cannot** publish a new model, proving that the `authorize('Admin')` middleware on the publish endpoint works.
+4.  **Dynamic API Test (Success Case):**
+      * The "Admin" user **publishes** a new model named `TestProduct`.
+      * In the **very next test**, the suite sends a `POST` request to the `/api/testproduct` endpoint—an endpoint that **did not exist when the server started**.
+      * It confirms the record was created successfully.
+5.  **Dynamic RBAC Test:** The suite then uses the "Viewer" token to send a `GET` request to the new `/api/testproduct` endpoint and confirms it can successfully read the data, as defined in the model's RBAC rules.
+
+This test flow provides automated proof that the API endpoints are created, mounted, and secured *live* on the server at runtime.
+
+-----
+
+## How to Create & Publish a Model
 
 1.  **Register an Admin:**
-    * Navigate to the running frontend. You will be on the Login page.
-    * Click "Register Here".
-    * Sign up with an email and password (e.g., `admin@test.com` / `password123`).
-    * Your `RegisterPage` component automatically sends `role: "Admin"`, ensuring your user is an Admin.
+
+      * Navigate to the running frontend. You will be on the Login page.
+      * Click "Register Here".
+      * Sign up with an email and password (e.g., `admin@test.com` / `password123`).
+      * Your `RegisterPage` component automatically sends `role: "Admin"`, ensuring your user is an Admin.
 
 2.  **Log In:**
-    * [cite_start]Log in with the Admin account you just created[cite: 95].
+
+      * Log in with the Admin account you just created.
 
 3.  **Go to Model Definition:**
-    * Click "Model Definition" in the sidebar.
 
-4.  [cite_start]**Define the Model:** [cite: 96]
-    * **Model Name:** `Product`
-    * **Table Name:** (optional) `products`
-    * **Fields:** Add a few fields, for example:
-        * `name` (string, required)
-        * `price` (number)
-        * `inStock` (boolean, default: true)
-    * [cite_start]**RBAC:** Leave as-is (Admins have full access, Viewers can read)[cite: 25, 42, 43].
+      * Click "Model Definition" in the sidebar.
+
+4.  **Define the Model:**
+
+      * **Model Name:** `Product`
+      * **Table Name:** (optional) `products`
+      * **Fields:** Add a few fields, for example:
+          * `name` (string, required)
+          * `price` (number)
+          * `inStock` (boolean, default: true)
+      * **RBAC:** Leave as-is (Admins have full access, Viewers can read).
 
 5.  **Publish:**
-    * [cite_start]Click the "Publish Model" button[cite: 97].
 
-**That's it!** You will be redirected to the "Model List". [cite_start]You will now see "Product" in the table[cite: 62]. [cite_start]Click "Manage Records" to start adding, editing, and deleting products using the dynamically generated UI[cite: 63, 64, 101].
+      * Click the "Publish Model" button.
 
----
+**That's it\!** You will be redirected to the "Model List". You will now see "Product" in the table. Click "Manage Records" to start adding, editing, and deleting products using the dynamically generated UI.
+
+-----
 
 ## How It Works
 
 This platform's core logic is split between **file-writing** and **dynamic routing**.
 
-### [cite_start]1. How File-Write Works [cite: 90]
+### 1\. How File-Write Works
 
 This process is handled by the `SchemaService` (`schema.service.ts`).
 
 1.  The frontend POSTs the model definition (a large JSON object) to the `/api/models/publish` endpoint.
 2.  This endpoint is protected by `protect` and `authorize('Admin')` middleware.
 3.  It calls the `schemaService.publishModel(modelDefinition)` function.
-4.  [cite_start]This function first **writes the file** to the disk using `fs.writeFile`[cite: 14, 46, 99]. The file is saved in the compiled `dist/models/` directory (e.g., `dist/models/Product.json`).
+4.  This function first **writes the file** to the disk using `fs.writeFile`. The file is saved in the compiled `dist/models/` directory (e.g., `dist/models/Product.json`).
 5.  After the file is saved, it calls `createTableFromDefinition(modelDefinition)` to create the corresponding table in the PostgreSQL database.
 
-### [cite_start]2. How Dynamic CRUD Endpoints are Registered [cite: 91]
+### 2\. How Dynamic CRUD Endpoints are Registered
 
 This "hot-reload" routing is handled by the `RouterService` (`router.service.ts`).
 
 **A. On Server Start:**
+
 1.  In `index.ts`, the `startServer` function is called.
-2.  [cite_start]It first calls `schemaService.loadModels()`, which reads all `.json` files from the `dist/models/` directory[cite: 48].
+2.  It first calls `schemaService.loadModels()`, which reads all `.json` files from the `dist/models/` directory.
 3.  It then loops through each model and calls `routerService.registerModelRoutes(model)` for each one.
 4.  This ensures that all previously published models are loaded and their APIs are active as soon as the server starts.
 
 **B. On New Model Publish (Hot-Reload):**
-1.  [cite_start]When you hit the `/api/models/publish` endpoint, *after* the file is written and the table is created, the controller *also* calls `routerService.registerModelRoutes(modelDefinition)`[cite: 100].
+
+1.  When you hit the `/api/models/publish` endpoint, *after* the file is written and the table is created, the controller *also* calls `routerService.registerModelRoutes(modelDefinition)`.
 2.  The `registerModelRoutes` function:
-    * Gets the model's name (e.g., `Product` -> `product`).
-    * Calls the `createCrudRouter(model, knex)` factory function.
-    * [cite_start]This factory creates a **new Express router** with all 5 CRUD endpoints (`GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`)[cite: 50].
-    * [cite_start]Each endpoint is wrapped in the `createRbacMiddleware` to enforce the model's specific permissions[cite: 58, 69].
+      * Gets the model's name (e.g., `Product` -\> `product`).
+      * Calls the `createCrudRouter(model, knex)` factory function.
+      * This factory creates a **new Express router** with all 5 CRUD endpoints (`GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`).
+      * Each endpoint is wrapped in the `createRbacMiddleware` to enforce the model's specific permissions.
 3.  Finally, `routerService` mounts this new router onto the main Express `app` instance:
     ```javascript
     this.app.use(`/api/${tableName}`, router);
     ```
-4.  This new API (e.g., `/api/product`) is now **instantly active** on the running server without needing a restart[cite: 102].
+4.  This new API (e.g., `/api/product`) is now **instantly active** on the running server without needing a restart.
+
